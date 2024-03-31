@@ -220,6 +220,7 @@ case class SortMergeJoinExec(
             spillThreshold
           )
           val rightNullRow = new GenericInternalRow(right.output.length)
+          print("LeftOuter init in SparkPlan\n")
           new LeftOuterIterator(
             smjScanner, rightNullRow, boundCondition, resultProj, numOutputRows).toScala
 
@@ -681,6 +682,7 @@ private[joins] class SortMergeJoinScanner(
   private[this] val bufferedMatches =
     new ExternalAppendOnlyUnsafeRowArray(inMemoryThreshold, spillThreshold)
 
+  print(s"${this.hashCode()} SortMergeJoinScanner init\n")
   // Initialization (note: do _not_ want to advance streamed here).
   advancedBufferedToRowWithNullFreeJoinKey()
 
@@ -751,6 +753,7 @@ private[joins] class SortMergeJoinScanner(
    *         join results.
    */
   final def findNextOuterJoinRows(): Boolean = {
+    print("findNextOuterJoinRows() \n")
     if (!advancedStreamed()) {
       // We have consumed the entire streamed iterator, so there can be no more matches.
       matchJoinKey = null
@@ -793,10 +796,12 @@ private[joins] class SortMergeJoinScanner(
     if (streamedIter.advanceNext()) {
       streamedRow = streamedIter.getRow
       streamedRowKey = streamedKeyGenerator(streamedRow)
+      print(s"${this.hashCode()} advancedStreamed() streamedIter.advanceNext()=true streamedRow: ${streamedRow}\n")
       true
     } else {
       streamedRow = null
       streamedRowKey = null
+      print(s"${this.hashCode()} advancedStreamed() streamedIter.advanceNext()=false streamedRow: ${streamedRow}\n")
       false
     }
   }
@@ -809,14 +814,17 @@ private[joins] class SortMergeJoinScanner(
     var foundRow: Boolean = false
     while (!foundRow && bufferedIter.advanceNext()) {
       bufferedRow = bufferedIter.getRow
+      print(s"${this.hashCode()} [advancedBufferedToRowWithNullFreeJoinKey() bufferedRow in while: ${bufferedRow}, ")
       bufferedRowKey = bufferedKeyGenerator(bufferedRow)
       foundRow = !bufferedRowKey.anyNull
     }
     if (!foundRow) {
+      print(s"${this.hashCode()} advancedBufferedToRowWithNullFreeJoinKey() not found Row, current is ${bufferedRow} ]\n")
       bufferedRow = null
       bufferedRowKey = null
       false
     } else {
+      print(s"${this.hashCode()} advancedBufferedToRowWithNullFreeJoinKey() found Row, current is ${bufferedRow} ]\n")
       true
     }
   }
@@ -834,6 +842,7 @@ private[joins] class SortMergeJoinScanner(
     matchJoinKey = streamedRowKey.copy()
     bufferedMatches.clear()
     do {
+      print(s"${this.hashCode()} bufferedMatches.add(bufferedRow.asInstanceOf[UnsafeRow])\n")
       bufferedMatches.add(bufferedRow.asInstanceOf[UnsafeRow])
       advancedBufferedToRowWithNullFreeJoinKey()
     } while (bufferedRow != null && keyOrdering.compare(streamedRowKey, bufferedRowKey) == 0)
@@ -851,6 +860,7 @@ private class LeftOuterIterator(
     numOutputRows: SQLMetric)
   extends OneSideOuterIterator(
     smjScanner, rightNullRow, boundCondition, resultProj, numOutputRows) {
+  print(s"${this.hashCode()} LeftOuterIterator init\n")
 
   protected override def setStreamSideOutput(row: InternalRow): Unit = joinedRow.withLeft(row)
   protected override def setBufferedSideOutput(row: InternalRow): Unit = joinedRow.withRight(row)
@@ -912,6 +922,7 @@ private abstract class OneSideOuterIterator(
    * @return whether there are more rows in the stream to consume.
    */
   private def advanceStream(): Boolean = {
+    print(s"${this.hashCode()} OneSideOuterIterator.advanceStream()\n")
     rightMatchesIterator = null
     if (smjScanner.findNextOuterJoinRows()) {
       setStreamSideOutput(smjScanner.getStreamedRow)
@@ -936,19 +947,24 @@ private abstract class OneSideOuterIterator(
    * @return whether there is such a row in the current buffer.
    */
   private def advanceBufferUntilBoundConditionSatisfied(): Boolean = {
+    print(s"${this.hashCode()} OneSideOuterIterator.advanceBufferUntilBoundConditionSatisfied()\n")
     var foundMatch: Boolean = false
     if (rightMatchesIterator == null) {
       rightMatchesIterator = smjScanner.getBufferedMatches.generateIterator()
+      print(s"${this.hashCode()} advanceBufferUntilBoundConditionSatisfied() arightMatchesIterator = smjScanner.getBufferedMatches.generateIterator() = ${rightMatchesIterator.hashCode()} \n")
     }
 
     while (!foundMatch && rightMatchesIterator.hasNext) {
-      setBufferedSideOutput(rightMatchesIterator.next())
+      val nextMatch = rightMatchesIterator.next()
+      print(s"rightMatchesIterator ${rightMatchesIterator.hashCode()} has ${nextMatch}")
+      setBufferedSideOutput(nextMatch)
       foundMatch = boundCondition(joinedRow)
     }
     foundMatch
   }
 
   override def advanceNext(): Boolean = {
+    print(s"${this.hashCode()} OneSideOuterIterator.advanceNext()\n")
     val r = advanceBufferUntilBoundConditionSatisfied() || advanceStream()
     if (r) numOutputRows += 1
     r
