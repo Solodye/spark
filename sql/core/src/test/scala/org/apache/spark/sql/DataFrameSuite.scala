@@ -2218,13 +2218,17 @@ class DataFrameSuite extends QueryTest with SharedSQLContext {
 
   test("SPARK-20897: cached self-join should not fail") {
     // force to plan sort merge join
-    withSQLConf(SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> "0") {
-      val df = Seq(1 -> "a").toDF("i", "j")
-      val df1 = df.as("t1")
-      val df2 = df.as("t2")
-      assert(df1.join(df2, $"t1.i" === $"t2.i").cache().count() == 1)
+    withSQLConf((SQLConf.AUTO_BROADCASTJOIN_THRESHOLD.key -> "0"),
+      (SQLConf.WHOLESTAGE_CODEGEN_ENABLED.key -> "false" )
+    ) {
+      val df1 = Seq(0x1 -> 0x1, 0x4 -> 0x4, 0x8 -> 0x8).toDF("i", "j").as("t1").coalesce(1)
+      val df2 = Seq(0x10 -> 0x1010, 0x4 -> 0x44, 0x4 -> 0x45, 0x7 -> 0x77)
+        .toDF("i", "j").as("t2").coalesce(1)
+      df1.join(df2, $"t1.i" === $"t2.i", "left_outer").explain(false)
+      df1.join(df2, $"t1.i" === $"t2.i", "left_outer").show(100, false)
     }
   }
+
 
   test("order-by ordinal.") {
     checkAnswer(
